@@ -4,6 +4,7 @@
             [quiescent.dom :as d]
             [cljs.core.async :refer [chan close!]])
   (:require-macros
+    [quiescent.core :as q]
     [cljs.core.async.macros :as m :refer [go]]))
 
 ;; (repl/connect "http://localhost:9000/repl")
@@ -68,7 +69,7 @@
 
 (defn app-loop [timestep]
   (go
-    (loop [grid (initial-grid 2 100 100)]
+    (loop [grid (initial-grid 2 20 20)]
       (q/render (CultureWarDiv grid)
         (.getElementById js/document "cw-grid"))
       (let [new-grid (step eight-neighbours rand-int grid)]
@@ -76,6 +77,6 @@
         (recur new-grid)))))
 
 (enable-console-print!)
-(app-loop 40)
+(app-loop 200)
 
 (println "Hello world!")
