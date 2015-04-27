@@ -5,7 +5,8 @@
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [org.clojure/clojurescript "0.0-2755"]
                  [org.clojure/core.async "0.1.346.0-17112a-alpha"]
-                 [quiescent "0.2.0-alpha1"]]
+                 [quiescent "0.2.0-alpha1"]
+                 [rm-hull/monet "0.2.1"]]
 
   :node-dependencies [[source-map-support "0.2.8"]]
 
