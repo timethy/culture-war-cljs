@@ -34,4 +34,5 @@
                 :output-to "out-adv/culture_war_cljs.min.js"
                 :output-dir "out-adv"
                 :optimizations :advanced
+                :externs ["externs/canvas.js"]
                 :pretty-print false}}]})

@@ -10,6 +10,7 @@
 
 ;; (repl/connect "http://localhost:9000/repl")
 
+
 ; Copied from d3js
 (def colors ["#1f77b4" "#ff7f0e" "#2ca02c" "#d62728" "#9467bd" "#8c564b" "#e377c2" "#7f7f7f" "#bcbd22" "#17becf"])
 
@@ -83,14 +84,15 @@
 (def width 16)
 (def height 16)
 
-(defn draw-grid [ctx grid]
+(defn draw-grid [ctx grid old-grid]
   (let [lengths [(count grid) (count (first grid))]
         w (dec width)
         h (dec height)]
     (doseq [i (range (first lengths))
             j (range (second lengths))]
-      (set! (.-fillStyle ctx) (colors (aget (aget grid i) j)))
-      (. ctx (fillRect (* j width) (* i height) w h)))))
+      (when (or (nil? old-grid) (not= (aget (aget grid i) j) (aget (aget old-grid i) j)))
+        (set! (.-fillStyle ctx) (colors (aget (aget grid i) j)))
+        (. ctx (fillRect (* j width) (* i height) w h))))))
 
 (defn copy [grid]
   (apply array (map (partial apply array) grid)))
@@ -99,8 +101,9 @@
   (let [dom (.getElementById js/document "cw-canvas")
         ctx (mc/get-context dom "2d")]
     (. ctx (clearRect 0 0 (.-width dom) (.-height dom)))
+    (draw-grid ctx grid nil)
     (go-loop [g [(copy grid) (copy grid)]]
-      (draw-grid ctx (first g))
+      (draw-grid ctx (first g) (second g))
       (let [ctrl (alt!
                    stop-ch :stop
                    (timeout timestep) :continue)]
@@ -113,7 +116,7 @@
         stop-channel (chan)
         stopped-channel (chan)
         control-div (.getElementById js/document "cw-controls")]
-    (go-loop [settings {:colors 10, :m 10, :n 10, :wrap false, :timestep 10, :running false}]
+    (go-loop [settings {:colors 10, :m 10, :n 10, :wrap false, :timestep 250, :running false}]
       (q/render (CultureWarControls settings control-channel stop-channel) control-div)
       (if (:running settings)
         (<! stopped-channel))
