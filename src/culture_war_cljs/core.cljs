@@ -10,6 +10,63 @@
 
 ;; (repl/connect "http://localhost:9000/repl")
 
+;; Core code here:
+
+(defprotocol ICultureWar
+  (update-color [this v c])
+  (color-of [this v])
+  (neighbours-of [this v])
+  (cell-ids [this]))
+
+(def ^:private neighbouring-coords
+  (for [i [-1 0 1]
+        j [-1 0 1]
+        :when (not= [0 0] [i j])] [i j]))
+
+(defrecord IGridCultureWar [wrap-around m n grid]
+  ICultureWar
+  (update-color [this v c] (assoc this :grid (update-in grid v (constantly c))))
+  (color-of [this v] (get-in grid v))
+  (neighbours-of [this v]
+    (let [n-8 (set (map (fn [[i j]] (mapv + v [i j])) neighbouring-coords))]
+      (if wrap-around
+        (map (fn [[i j]] [(mod i m) (mod j n)]) n-8)
+        (filter (fn [[i j]] (and (< -1 i m) (< -1 j n))) n-8))))
+  (cell-ids [this] (for [i (range m)
+                         j (range n)] [i j])))
+
+(defn grid-culture-war [m n wrap-around init-fn]
+  (let [grid (mapv #(mapv (partial init-fn %) (range n)) (range m))]
+    (map->IGridCultureWar {:m m :n n :wrap-around wrap-around :grid grid})))
+
+(defprotocol IElection
+  (majority [this own-color neighbours] "returns a [IMajority object major color]"))
+
+(defn majors-in [neighbours]
+  (let [freqs (sort-by (comp - second) (frequencies neighbours))
+        [_ max-freq] (first freqs)]
+    (map first (take-while (comp (partial = max-freq) second) freqs))))
+
+(def conservative-election
+  (reify IElection
+    (majority [this own-color neighbours]
+      (let [[m-1 & m-rest] (majors-in neighbours)]
+        (if m-rest own-color
+          m-1)))))
+
+(defn random-election [random]
+  (reify IElection
+    (majority [this own-color neighbours]
+      (let [majors (majors-in neighbours)]
+        (nth majors (random (count majors)))))))
+
+(defn update-war [war election]
+  (let [ids (cell-ids war)]
+    (reduce (fn [old-war id]
+              (update-color old-war id (majority election (color-of war id) (map (partial color-of war) (neighbours-of war id)))))
+      war ids)))
+
+;; Rendering control code here
 
 ; Copied from d3js
 (def colors ["#1f77b4" "#ff7f0e" "#2ca02c" "#d62728" "#9467bd" "#8c564b" "#e377c2" "#7f7f7f" "#bcbd22" "#17becf"])
@@ -59,25 +116,8 @@
     (first colors)
     (nth colors (random-fn (count colors)))))
 
-(defn initial-grid [c m n]
-  (apply array
-    (for [i (range m)]
-      (apply array
-        (for [j (range n)]
-          (rand-int c))))))
-
-(defn step
-  "We guarantee to always call the random-fn in the same order, so randomness can be pregenerated."
-  [[grid new-grid] neighbour-fn random-fn]
-  (let [lengths [(count grid) (count (first grid))]]
-    (doseq [i (range (first lengths))
-            j (range (second lengths))]
-      (let [neighbours (neighbour-fn lengths [i j])
-            neighbour-colors (map (fn [[x y]] (aget (aget grid x) y)) neighbours)
-            max-colors (maxima neighbour-colors)]
-        (aset (aget new-grid i)
-          j (new-color max-colors random-fn))))
-    [new-grid grid]))
+(defn initial-war [c m n]
+  (grid-culture-war m n false (fn [i j] (rand-int c))))
 
 (defn timeout [ms] (let [c (chan)] (js/setTimeout (fn [] (close! c)) ms) c))
 
@@ -90,26 +130,29 @@
         h (dec height)]
     (doseq [i (range (first lengths))
             j (range (second lengths))]
-      (when (or (nil? old-grid) (not= (aget (aget grid i) j) (aget (aget old-grid i) j)))
-        (set! (.-fillStyle ctx) (colors (aget (aget grid i) j)))
+      (when (or (nil? old-grid) (not= (get (get grid i) j) (get (get old-grid i) j)))
+        (set! (.-fillStyle ctx) (colors (get (get grid i) j)))
         (. ctx (fillRect (* j width) (* i height) w h))))))
 
 (defn copy [grid]
   (apply array (map (partial apply array) grid)))
 
-(defn app-loop [stop-ch stopped-ch grid {:keys [wrap timestep]}]
+(defn app-loop [stop-ch stopped-ch war {:keys [wrap timestep]}]
   (let [dom (.getElementById js/document "cw-canvas")
-        ctx (mc/get-context dom "2d")]
+        ctx (mc/get-context dom "2d")
+        grid (:grid war)
+        election (random-election rand-int)]
+    (println (keys war))
     (. ctx (clearRect 0 0 (.-width dom) (.-height dom)))
     (draw-grid ctx grid nil)
-    (go-loop [g [(copy grid) (copy grid)]]
-      (draw-grid ctx (first g) (second g))
+    (go-loop [w war]
+      (draw-grid ctx (:grid w) nil)
       (let [ctrl (alt!
                    stop-ch :stop
                    (timeout timestep) :continue)]
         (case ctrl
           :stop (>! stopped-ch :stopped)
-          :continue (recur (step g (eight-neighbours wrap) rand-int)))))))
+          :continue (recur (update-war w election)))))))
 
 (defn control-loop []
   (let [control-channel (chan)
@@ -126,7 +169,7 @@
         (cond
           (vector? ctrl)  (do (println ctrl) (let [[key value] ctrl] (recur (assoc settings key value :running false))))
           (= ctrl :start) (do
-                            (app-loop stop-channel stopped-channel (initial-grid colors m n) settings)
+                            (app-loop stop-channel stopped-channel (initial-war colors m n) settings)
                             (recur (assoc settings :running true))))))))
 
 (enable-console-print!)
