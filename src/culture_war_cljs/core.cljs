@@ -137,14 +137,17 @@
 
 (defn populate [n]
   (swap! app-state
-    (fn [{:keys [wars position] :as state}]
+    (fn [{:keys [wars position settings] :as state}]
       (let [start-time (.getTime (js/Date.))
             war-count (count wars)
-            diff (- n war-count)]
+            diff (- n war-count)
+            election (if (= (settings :election) :random)
+                       (random-election rand-int)
+                       conservative-election)]
         (if (pos? diff)
           (-> state
             (assoc
-              :wars (run-war wars (random-election rand-int) diff)
+              :wars (run-war wars election diff)
               :position (+ position diff))
             (assoc
               :time-used (- (.getTime (js/Date.)) start-time)))
@@ -175,7 +178,11 @@
     (dom/button #js {:onClick reinit} "Initialize new war")
     (render-num-setting new-settings "rows" :m)
     (render-num-setting new-settings "cols" :n)
-    (render-num-setting new-settings "colors" :c)))
+    (render-num-setting new-settings "colors" :c)
+    (dom/label nil "Conservative?"
+      (dom/input #js {:type "checkbox"
+                      :onChange (fn [this] (set-new-setting :election (constantly (if (.. this -target -value) :conservative :random))))
+                      :value (= (get new-settings :election) :conservative)}))))
 
 (defn add-steps-and-populate [new-steps i _]
   (do
