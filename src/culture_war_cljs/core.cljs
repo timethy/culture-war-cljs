@@ -92,6 +92,7 @@
 (defonce app-state (atom {:wars [(empty-war default-settings)]
                           :play false
                           :position 0
+                          :new-steps 100
                           :settings default-settings
                           :new-settings default-settings}))
 
@@ -109,8 +110,6 @@
                        :style (cell-style (colors (get-in grid [i j])))}
           ".")))))
 
-(def play-chan (chan))
-
 (defn jump-to [n] (swap! app-state update-in [:position] (constantly n)))
 (defn jump-by [n] (swap! app-state (fn [{:keys [position wars] :as args}]
                                      (assoc args :position (-> position (+ n) (max 0) (min (dec (count wars))))))))
@@ -119,7 +118,8 @@
   (swap! app-state (fn [{:keys [new-settings] :as args}]
                      (assoc args
                        :wars [(initial-war new-settings)]
-                       :settings new-settings))))
+                       :settings new-settings
+                       :position 0))))
 
 (defn populate [n]
   (swap! app-state update-in [:wars]
@@ -131,27 +131,44 @@
           wars)))))
 
 (defn render-controls [war-count]
-  [(dom/button #js {:onClick (partial jump-to 0)} "|<")
-   (dom/button #js {:onClick (partial jump-by -100)} "<100")
-   (dom/button #js {:onClick (partial jump-by -10)} "<10")
-   (dom/button #js {:onClick (partial jump-by -1)} "<")
-   (dom/button nil "Play")
-   (dom/button #js {:onClick (partial jump-by +1)} ">")
-   (dom/button #js {:onClick (partial jump-by +10)} ">10")
-   (dom/button #js {:onClick (partial jump-by +100)} ">100")
-   (dom/button #js {:onClick (partial jump-to (dec war-count))} ">|")])
+  (dom/div #js {:className "cw-controls"}
+    (dom/button #js {:onClick (partial jump-to 0)} "|<")
+    (dom/button #js {:onClick (partial jump-by -100)} "<100")
+    (dom/button #js {:onClick (partial jump-by -10)} "<10")
+    (dom/button #js {:onClick (partial jump-by -1)} "<")
+    (dom/button nil ".")
+    (dom/button #js {:onClick (partial jump-by +1)} ">")
+    (dom/button #js {:onClick (partial jump-by +10)} ">10")
+    (dom/button #js {:onClick (partial jump-by +100)} ">100")
+    (dom/button #js {:onClick (partial jump-to (dec war-count))} ">|")))
+
+(defn set-new-steps [steps]
+  (swap! app-state assoc :new-steps steps))
 
 (defn set-new-setting [key f]
   (swap! app-state update-in [:new-settings key] f))
 
+(defn- render-num-setting [settings setting-name setting]
+  (dom/label nil setting-name
+    (dom/input #js {:onChange (fn [this] (set-new-setting setting (constantly (.. this -target -value))))
+                    :value (get settings setting)})))
+
 (defn render-inputs [new-settings]
-  [(dom/button #js {:onClick (fn [_] (do (reinit) (populate 100)))} "New war")
-   (dom/label nil "Test"
-     (dom/input #js {:onChange (fn [this] (set-new-setting :m (constantly (.-value this))))}))])
+  (dom/div #js {:className "cw-inputs"}
+    (dom/button #js {:onClick reinit} "New war")
+    (render-num-setting new-settings "rows" :m)
+    (render-num-setting new-settings "cols" :n)
+    (render-num-setting new-settings "colors" :c)))
+
+(defn render-populate [new-steps]
+  (dom/div #js {:className "cw-populate"}
+    (dom/button #js {:onClick (fn [_] (populate new-steps))} "Populate")
+    (dom/input #js {:onChange (fn [this] (set-new-steps (.. this -target -value)))
+                    :value new-steps})))
 
 (om/root
   (fn [data owner]
-    (let [{:keys [wars position settings new-settings]} data
+    (let [{:keys [wars position settings new-settings new-steps]} data
           war (nth wars position)
           {:keys [m n time-between-frame]} settings
           war-count (count wars)]
@@ -161,82 +178,10 @@
             (dom/p nil (str "Time betweeen frames " time-between-frame "ms"))
             (dom/p nil (str "Frame " position "/" (dec war-count)))
             (dom/div #js {:className "cw-grid"} (render-grid m n (:grid war)))
-            (dom/div #js {:className "cw-controls"}
-              (render-controls war-count))
-            (dom/div #js {:className "cw-inputs"}
-              (render-inputs new-settings)))))))
+            (render-controls war-count)
+            (render-inputs new-settings)
+            (render-populate new-steps))))))
   app-state
   {:target (. js/document (getElementById "cw-app"))})
-
-(comment
-(q/defcomponent CultureWarControls
-  [settings control-ch stop-ch]
-  (apply d/div {}
-    (if (:running settings)
-      (d/button {:onClick #(go (>! stop-ch :stop))} "Stop")
-      (d/button {:onClick #(go (>! control-ch :start))} "Start"))
-    (for [setting [:colors :m :n :timestep :wrap]
-          elem [(d/span {} (name setting))
-                (d/input {:value (settings setting)
-                          :type "text"
-                          :onChange
-                          (fn [evt]
-                            (let [v (.-value (.-target evt))]
-                              (go (>! control-ch [setting v]))))})]]
-      elem)))
-
-(def width 16)
-(def height 16)
-
-(defn draw-grid [ctx grid old-grid]
-  (let [lengths [(count grid) (count (first grid))]
-        w (dec width)
-        h (dec height)]
-    (doseq [i (range (first lengths))
-            j (range (second lengths))]
-      (when (or (nil? old-grid) (not= (get (get grid i) j) (get (get old-grid i) j)))
-        (set! (.-fillStyle ctx) (colors (get (get grid i) j)))
-        (. ctx (fillRect (* j width) (* i height) w h))))))
-
-(defn copy [grid]
-  (apply array (map (partial apply array) grid)))
-
-(defn app-loop [stop-ch stopped-ch war {:keys [timestep]}]
-  (let [dom (.getElementById js/document "cw-canvas")
-        ctx (mc/get-context dom "2d")
-        grid (:grid war)
-        election (random-election rand-int)]
-    (. ctx (clearRect 0 0 (.-width dom) (.-height dom)))
-    (draw-grid ctx grid nil)
-    (go-loop [w war
-              n 0]
-;      (println n)
-      (draw-grid ctx (:grid w) nil)
-      (let [ctrl (alt!
-                   stop-ch :stop
-                   (timeout timestep) :continue)]
-        (case ctrl
-          :stop (>! stopped-ch :stopped)
-          :continue (recur (update-war w election) (inc n)))))))
-
-(defn control-loop []
-  (let [control-channel (chan)
-        stop-channel (chan)
-        stopped-channel (chan)
-        control-div (.getElementById js/document "cw-controls")]
-    (go-loop [settings {:colors 10, :m 10, :n 10, :wrap false, :timestep 250, :running false}]
-      (q/render (CultureWarControls settings control-channel stop-channel) control-div)
-      (if (:running settings)
-        (<! stopped-channel))
-      (q/render (CultureWarControls (assoc settings :running false) control-channel stop-channel) control-div)
-      (let [ctrl (<! control-channel)
-            {:keys [colors m n timestep wrap]} settings]
-        (cond ; ctrl: vector is setting a setting, number is jumping to a step, :simulate is resume simulation from current step
-          (vector? ctrl) (do (println ctrl) (let [[key value] ctrl] (recur (assoc settings key value :running false))))
-          (= ctrl :simulate) (do
-                               (app-loop stop-channel stopped-channel
-                                 (grid-culture-war m n wrap (fn [i j] (rand-int colors)))
-                                 settings)
-                               (recur (assoc settings :running true)))))))))
 
 (defn timeout [ms] (let [c (chan)] (js/setTimeout (fn [] (close! c)) ms) c))
