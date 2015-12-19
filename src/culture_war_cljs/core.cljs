@@ -213,13 +213,15 @@
           war (nth wars position)
           {:keys [c m n election]} settings
           war-count (count wars)
-          colors (vec (color-strings c))]
+          colors (vec (color-strings c))
+          unit (println war)]
       (reify om/IRender
         (render [_]
           (dom/div nil
             (dom/p nil (str "Time used for populating " time-used "ms"))
             (dom/p nil (str "Frame " (inc position) "/" war-count))
             (dom/p nil (str "Election " election))
+            (dom/p nil (str "Frequencies " (sort-by (comp - second) (frequencies (map (partial color-of @war) (if war (:cell-ids war) []))))))
             (dom/div #js {:className "cw-grid"} (render-grid colors m n (:grid war)))
             (render-controls war-count)
             (render-inputs new-settings)
