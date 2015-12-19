@@ -22,29 +22,45 @@
         j [-1 0 1]
         :when (not= [0 0] [i j])] [i j]))
 
-(defrecord IGridCultureWar [wrap-around m n grid]
+(defn- get-in-grid [grid i j]
+  (get (get grid i) j))
+
+(defrecord IGridCultureWar [wrap-around m n grid cell-ids]
   ICultureWar
   (update-color [this v c] (assoc this :grid (update-in grid v (constantly c))))
-  (color-of [this v] (get-in grid v))
-  (neighbours-of [this v]
-    (let [n-8 (set (map (fn [[i j]] (mapv + v [i j])) neighbouring-coords))]
-      (if wrap-around
-        (map (fn [[i j]] [(mod i m) (mod j n)]) n-8)
-        (filter (fn [[i j]] (and (< -1 i m) (< -1 j n))) n-8))))
-  (cell-ids [this] (for [i (range m)
-                         j (range n)] [i j])))
+  (color-of [this [i j]] (get-in-grid grid i j))
+  (neighbours-of [this [i j]]
+    (let [[dec-m dec-n inc-m inc-n] (if wrap-around
+                                      [(fn [x] (mod (dec x) m))
+                                       (fn [x] (mod (dec x) n))
+                                       (fn [x] (mod (inc x) m))
+                                       (fn [x] (mod (inc x) n))]
+                                      [dec dec inc inc])]
+      (filter some? [(get-in-grid grid i (dec-n j))
+                     (get-in-grid grid i (inc-n j))
+                     (get-in-grid grid (dec-m i) (dec-n j))
+                     (get-in-grid grid (dec-m i) j)
+                     (get-in-grid grid (dec-m i) (inc-n j))
+                     (get-in-grid grid (inc-m i) (dec-n j))
+                     (get-in-grid grid (inc-m i) j)
+                     (get-in-grid grid (inc-m i) (inc-n j))])))
+  (cell-ids [this] cell-ids))
 
 (defn grid-culture-war [m n wrap-around init-fn]
   (let [grid (mapv #(mapv (partial init-fn %) (range n)) (range m))]
-    (map->IGridCultureWar {:m m :n n :wrap-around wrap-around :grid grid})))
+    (map->IGridCultureWar {:m m :n n :wrap-around wrap-around :grid grid :cell-ids (for [i (range m) j (range n)] [i j])})))
 
 (defprotocol IElection
   (majority [this own-color neighbours] "returns a [IMajority object major color]"))
 
+(defn max-by [f coll]
+  (reduce (fn [a b] (if (>= (f a) (f b)) a b)) coll))
+
+; Make this faster?
 (defn majors-in [neighbours]
-  (let [freqs (sort-by (comp - second) (frequencies neighbours))
-        [_ max-freq] (first freqs)]
-    (map first (take-while (comp (partial = max-freq) second) freqs))))
+  (let [freqs (frequencies neighbours)
+        max-freq (second (max-by second freqs))]
+    (map first (filter (comp (partial = max-freq) second) freqs))))
 
 (def conservative-election
   (reify IElection
@@ -62,7 +78,7 @@
 (defn update-war [war election]
   (let [ids (cell-ids war)]
     (reduce (fn [old-war id]
-              (update-color old-war id (majority election (color-of war id) (map (partial color-of war) (neighbours-of war id)))))
+              (update-color old-war id (majority election (color-of war id) (neighbours-of war id))))
       war ids)))
 
 (defn run-war [existing-wars election steps]
@@ -124,8 +140,7 @@
     (fn [{:keys [wars position] :as state}]
       (let [start-time (.getTime (js/Date.))
             war-count (count wars)
-            diff (- n war-count)
-            unit (println start-time)]
+            diff (- n war-count)]
         (if (pos? diff)
           (-> state
             (assoc
