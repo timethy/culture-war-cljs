@@ -2,37 +2,31 @@
   :description "FIXME: write this!"
   :url "http://example.com/FIXME"
 
-  :dependencies [[org.clojure/clojure "1.6.0"]
-                 [org.clojure/clojurescript "0.0-2755"]
-                 [org.clojure/core.async "0.1.346.0-17112a-alpha"]
-                 [rm-hull/monet "0.2.1"]
+  :dependencies [[org.clojure/clojure "1.7.0"]
+                 [org.clojure/clojurescript "1.7.170"]
+                 [org.clojure/core.async "0.2.374"]
                  [org.omcljs/om "0.9.0"]]
 
-  :node-dependencies [[source-map-support "0.2.8"]]
+  :plugins [[lein-cljsbuild "1.1.1"]]
 
-  :plugins [[lein-cljsbuild "1.0.4"]
-            [lein-npm "0.4.0"]]
+  :source-paths ["src"]
 
-  :source-paths ["src" "target/classes"]
+  :clean-targets ^{:protect false} ["out" "out-adv"]
 
-  :clean-targets ["out" "out-adv"]
-
-  :cljsbuild {
-    :builds [{:id "dev"
-              :source-paths ["src"]
-              :compiler {
-                :main culture-war-cljs.core
-                :output-to "out/culture_war_cljs.js"
-                :output-dir "out"
-                :optimizations :none
-                :cache-analysis true
-                :source-map true}}
-             {:id "release"
-              :source-paths ["src"]
-              :compiler {
-                :main culture-war-cljs.core
-                :output-to "out-adv/culture_war_cljs.min.js"
-                :output-dir "out-adv"
-                :optimizations :advanced
-                :externs ["externs/canvas.js"]
-                :pretty-print false}}]})
+  :cljsbuild {:builds
+              [{:id "dev"
+                :source-paths ["src"]
+                :compiler {:main culture-war-cljs.core
+                           :asset-path "js/compiled/out"
+                           :output-to "resources/public/js/compiled/cw_cljs.js"
+                           :output-dir "resources/public/js/compiled/out"
+                           :source-map-timestamp true}}
+               ;; This next build is an compressed minified build for
+               ;; production. You can build this with:
+               ;; lein cljsbuild once min
+               {:id "min"
+                :source-paths ["src"]
+                :compiler {:output-to "resources/public/js/compiled/cw_cljs.js"
+                           :main culture-war-cljs.core
+                           :optimizations :advanced
+                           :pretty-print false}}]})

@@ -1,7 +1,5 @@
 (ns culture-war-cljs.core
-  (:require [clojure.browser.repl :as repl]
-            [cljs.core.async :refer [chan close! >! <!]]
-            [monet.canvas :as mc]
+  (:require [cljs.core.async :refer [chan close! >! <!]]
             [om.core :as om :include-macros true]
             [om.dom :as dom :include-macros true])
   (:require-macros
@@ -81,7 +79,7 @@
    :c 10
    :wrap false
    :election :random
-   :time-between-frame 100})
+   :time-used 0})
 
 (defn initial-war [{:keys [m n c wrap]}]
   (grid-culture-war m n wrap (fn [i j] (rand-int c))))
@@ -90,17 +88,16 @@
   (grid-culture-war m n wrap (constantly 0)))
 
 (defonce app-state (atom {:wars [(empty-war default-settings)]
-                          :play false
+                          :playing? false
                           :position 0
-                          :new-steps 100
+                          :new-steps 1
                           :settings default-settings
                           :new-settings default-settings}))
 
 ; Copied from d3js
 (def colors ["#1f77b4" "#ff7f0e" "#2ca02c" "#d62728" "#9467bd" "#8c564b" "#e377c2" "#7f7f7f" "#bcbd22" "#17becf"])
 
-(defn- cell-style [c]
-  #js {:backgroundColor c})
+(defn- cell-style [c] #js {:backgroundColor c})
 
 (defn render-grid [m n grid]
   (for [i (range m)]
@@ -117,18 +114,26 @@
 (defn reinit []
   (swap! app-state (fn [{:keys [new-settings] :as args}]
                      (assoc args
+                       :new-steps 1
                        :wars [(initial-war new-settings)]
                        :settings new-settings
                        :position 0))))
 
 (defn populate [n]
-  (swap! app-state update-in [:wars]
-    (fn [wars]
-      (let [war-count (count wars)
-            diff (- n war-count)]
+  (swap! app-state
+    (fn [{:keys [wars position] :as state}]
+      (let [start-time (.getTime (js/Date.))
+            war-count (count wars)
+            diff (- n war-count)
+            unit (println start-time)]
         (if (pos? diff)
-          (run-war wars (random-election rand-int) diff)
-          wars)))))
+          (-> state
+            (assoc
+              :wars (run-war wars (random-election rand-int) diff)
+              :position (+ position diff))
+            (assoc
+              :time-used (- (.getTime (js/Date.)) start-time)))
+          state)))))
 
 (defn render-controls [war-count]
   (dom/div #js {:className "cw-controls"}
@@ -142,11 +147,8 @@
     (dom/button #js {:onClick (partial jump-by +100)} ">100")
     (dom/button #js {:onClick (partial jump-to (dec war-count))} ">|")))
 
-(defn set-new-steps [steps]
-  (swap! app-state assoc :new-steps steps))
-
-(defn set-new-setting [key f]
-  (swap! app-state update-in [:new-settings key] f))
+(defn set-new-steps [steps] (swap! app-state assoc :new-steps steps))
+(defn set-new-setting [key f] (swap! app-state update-in [:new-settings key] f))
 
 (defn- render-num-setting [settings setting-name setting]
   (dom/label nil setting-name
@@ -155,28 +157,36 @@
 
 (defn render-inputs [new-settings]
   (dom/div #js {:className "cw-inputs"}
-    (dom/button #js {:onClick reinit} "New war")
+    (dom/button #js {:onClick reinit} "Initialize new war")
     (render-num-setting new-settings "rows" :m)
     (render-num-setting new-settings "cols" :n)
     (render-num-setting new-settings "colors" :c)))
 
+(defn add-steps-and-populate [new-steps i _]
+  (do
+    (set-new-steps (+ new-steps i))
+    (populate (+ new-steps i))))
+
 (defn render-populate [new-steps]
   (dom/div #js {:className "cw-populate"}
-    (dom/button #js {:onClick (fn [_] (populate new-steps))} "Populate")
+    (dom/button #js {:onClick (fn [_] (populate new-steps))} "Calculate more steps")
     (dom/input #js {:onChange (fn [this] (set-new-steps (.. this -target -value)))
-                    :value new-steps})))
+                    :value new-steps})
+    (dom/button #js {:onClick (partial add-steps-and-populate new-steps   1)} "+1")
+    (dom/button #js {:onClick (partial add-steps-and-populate new-steps  10)} "+10")
+    (dom/button #js {:onClick (partial add-steps-and-populate new-steps 100)} "+100")))
 
 (om/root
   (fn [data owner]
-    (let [{:keys [wars position settings new-settings new-steps]} data
+    (let [{:keys [wars position settings new-settings new-steps time-used]} data
           war (nth wars position)
-          {:keys [m n time-between-frame]} settings
+          {:keys [m n]} settings
           war-count (count wars)]
       (reify om/IRender
         (render [_]
           (dom/div nil
-            (dom/p nil (str "Time betweeen frames " time-between-frame "ms"))
-            (dom/p nil (str "Frame " position "/" (dec war-count)))
+            (dom/p nil (str "Time used for populating " time-used "ms"))
+            (dom/p nil (str "Frame " (inc position) "/" war-count))
             (dom/div #js {:className "cw-grid"} (render-grid m n (:grid war)))
             (render-controls war-count)
             (render-inputs new-settings)
