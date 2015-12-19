@@ -111,11 +111,20 @@
                           :new-settings default-settings}))
 
 ; Copied from d3js
-(def colors ["#1f77b4" "#ff7f0e" "#2ca02c" "#d62728" "#9467bd" "#8c564b" "#e377c2" "#7f7f7f" "#bcbd22" "#17becf"])
+(def d3js-colors ["#1f77b4" "#ff7f0e" "#2ca02c" "#d62728" "#9467bd" "#8c564b" "#e377c2" "#7f7f7f" "#bcbd22" "#17becf"])
+(defn greyscale [n]
+  (let [stepsize (int (/ 256 n))]
+    (for [i (range n)]
+      (apply str "#" (repeat 3 (.toString (* i stepsize) 16))))))
+
+(defn color-strings [n]
+  (if (<= n 10)
+    (take n d3js-colors)
+    (greyscale n)))
 
 (defn- cell-style [c] #js {:backgroundColor c})
 
-(defn render-grid [m n grid]
+(defn render-grid [colors m n grid]
   (for [i (range m)]
     (dom/div #js {:className "cw-row"}
       (for [j (range n)]
@@ -202,15 +211,16 @@
   (fn [data owner]
     (let [{:keys [wars position settings new-settings new-steps time-used]} data
           war (nth wars position)
-          {:keys [m n election]} settings
-          war-count (count wars)]
+          {:keys [c m n election]} settings
+          war-count (count wars)
+          colors (vec (color-strings c))]
       (reify om/IRender
         (render [_]
           (dom/div nil
             (dom/p nil (str "Time used for populating " time-used "ms"))
             (dom/p nil (str "Frame " (inc position) "/" war-count))
             (dom/p nil (str "Election " election))
-            (dom/div #js {:className "cw-grid"} (render-grid m n (:grid war)))
+            (dom/div #js {:className "cw-grid"} (render-grid colors m n (:grid war)))
             (render-controls war-count)
             (render-inputs new-settings)
             (render-populate new-steps))))))
