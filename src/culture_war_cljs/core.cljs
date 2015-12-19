@@ -202,13 +202,14 @@
   (fn [data owner]
     (let [{:keys [wars position settings new-settings new-steps time-used]} data
           war (nth wars position)
-          {:keys [m n]} settings
+          {:keys [m n election]} settings
           war-count (count wars)]
       (reify om/IRender
         (render [_]
           (dom/div nil
             (dom/p nil (str "Time used for populating " time-used "ms"))
             (dom/p nil (str "Frame " (inc position) "/" war-count))
+            (dom/p nil (str "Election " election))
             (dom/div #js {:className "cw-grid"} (render-grid m n (:grid war)))
             (render-controls war-count)
             (render-inputs new-settings)
