@@ -93,15 +93,15 @@
   {:m 10
    :n 10
    :c 10
-   :wrap false
+   :wrap-around false
    :election :random
    :time-used 0})
 
-(defn initial-war [{:keys [m n c wrap]}]
-  (grid-culture-war m n wrap (fn [i j] (rand-int c))))
+(defn initial-war [{:keys [m n c wrap-around]}]
+  (grid-culture-war m n wrap-around (fn [i j] (rand-int c))))
 
-(defn empty-war [{:keys [m n c wrap]}]
-  (grid-culture-war m n wrap (constantly 0)))
+(defn empty-war [{:keys [m n c wrap-around]}]
+  (grid-culture-war m n wrap-around (constantly 0)))
 
 (defonce app-state (atom {:wars [(empty-war default-settings)]
                           :playing? false
@@ -179,7 +179,7 @@
 
 (defn- render-num-setting [settings setting-name setting]
   (dom/label nil setting-name
-    (dom/input #js {:onChange (fn [this] (set-new-setting setting (constantly (.. this -target -value))))
+    (dom/input #js {:onChange (fn [this] (set-new-setting setting (constantly (int (.. this -target -value)))))
                     :value (get settings setting)})))
 
 (defn render-inputs [new-settings]
@@ -188,6 +188,10 @@
     (render-num-setting new-settings "rows" :m)
     (render-num-setting new-settings "cols" :n)
     (render-num-setting new-settings "colors" :c)
+    (dom/label nil "Wrap-around?"
+      (dom/input #js {:type "checkbox"
+                      :onChange (fn [this] (set-new-setting :wrap-around (constantly (.. this -target -value))))
+                      :value (get new-settings :wrap-around)}))
     (dom/label nil "Conservative?"
       (dom/input #js {:type "checkbox"
                       :onChange (fn [this] (set-new-setting :election (constantly (if (.. this -target -value) :conservative :random))))
@@ -213,8 +217,7 @@
           war (nth wars position)
           {:keys [c m n election]} settings
           war-count (count wars)
-          colors (vec (color-strings c))
-          unit (println war)]
+          colors (vec (color-strings c))]
       (reify om/IRender
         (render [_]
           (dom/div nil
